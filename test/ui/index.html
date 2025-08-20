@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Document Optimizer - API Test UI</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 LLM Document Optimizer</h1>
+            <p class="subtitle">API Testing Interface</p>
+        </header>
+
+        <div class="connection-status" id="connectionStatus">
+            <span class="status-indicator" id="statusIndicator">●</span>
+            <span id="statusText">Checking connection...</span>
+        </div>
+
+        <div class="config-section">
+            <h3>⚙️ Configuration</h3>
+            <div class="form-group">
+                <label for="apiUrl">API Base URL:</label>
+                <input type="text" id="apiUrl" value="http://localhost:8888" placeholder="https://your-api.netlify.app">
+            </div>
+            <div class="form-group">
+                <label for="apiKey">API Key:</label>
+                <input type="password" id="apiKey" placeholder="Enter your API key">
+                <button type="button" id="toggleApiKey" class="toggle-btn">👁️</button>
+            </div>
+            <button id="testConnection" class="btn btn-primary">Test Connection</button>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="health">Health Check</button>
+            <button class="tab-btn" data-tab="optimize">Document Optimizer</button>
+            <button class="tab-btn" data-tab="models">Models</button>
+            <button class="tab-btn" data-tab="tokens">Token Usage</button>
+            <button class="tab-btn" data-tab="monitoring">Monitoring</button>
+        </div>
+
+        <!-- Health Check Tab -->
+        <div class="tab-content active" id="health-tab">
+            <h3>🏥 Health Check</h3>
+            <div class="health-actions">
+                <button id="basicHealth" class="btn btn-secondary">Basic Health</button>
+                <button id="detailedHealth" class="btn btn-secondary">Detailed Health</button>
+            </div>
+            <div class="result-container">
+                <pre id="healthResult" class="result"></pre>
+            </div>
+        </div>
+
+        <!-- Document Optimizer Tab -->
+        <div class="tab-content" id="optimize-tab">
+            <h3>📄 Document Optimizer</h3>
+            <div class="form-group">
+                <label for="optimizationType">Optimization Type:</label>
+                <select id="optimizationType">
+                    <option value="clarity">Clarity</option>
+                    <option value="style">Style</option>
+                    <option value="consolidate">Consolidate</option>
+                    <option value="summarize">Summarize</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="model">Model:</label>
+                <select id="model">
+                    <option value="">Default</option>
+                    <option value="gpt-4">GPT-4</option>
+                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="documentText">Document Text:</label>
+                <textarea id="documentText" rows="8" placeholder="Enter your document text here...">This is a sample document that needs optimization. It contains multiple sentences that could be improved for clarity and style. The document discusses various topics and may benefit from consolidation or summarization depending on the chosen optimization type.</textarea>
+            </div>
+            <div class="form-group file-upload">
+                <label for="fileInput">Or Upload File:</label>
+                <input type="file" id="fileInput" accept=".txt,.md,.doc,.docx,.pdf" multiple>
+                <div class="file-list" id="fileList"></div>
+            </div>
+            <button id="optimizeDocument" class="btn btn-primary">Optimize Document</button>
+            <div class="result-container">
+                <pre id="optimizeResult" class="result"></pre>
+            </div>
+        </div>
+
+        <!-- Models Tab -->
+        <div class="tab-content" id="models-tab">
+            <h3>🎯 Models</h3>
+            <button id="getModels" class="btn btn-secondary">Get Available Models</button>
+            <div class="result-container">
+                <pre id="modelsResult" class="result"></pre>
+            </div>
+        </div>
+
+        <!-- Token Usage Tab -->
+        <div class="tab-content" id="tokens-tab">
+            <h3>🪙 Token Usage</h3>
+            <div class="token-actions">
+                <button id="getUsage" class="btn btn-secondary">Get Usage Stats</button>
+                <button id="getBudget" class="btn btn-secondary">Get Budget Info</button>
+                <button id="getPricing" class="btn btn-secondary">Get Pricing</button>
+                <button id="getTransactions" class="btn btn-secondary">Get Transactions</button>
+            </div>
+            <div class="form-group">
+                <label for="estimateTokens">Estimate Cost (tokens):</label>
+                <input type="number" id="estimateTokens" value="1000" min="1">
+                <button id="estimateCost" class="btn btn-secondary">Estimate</button>
+            </div>
+            <div class="result-container">
+                <pre id="tokensResult" class="result"></pre>
+            </div>
+        </div>
+
+        <!-- Monitoring Tab -->
+        <div class="tab-content" id="monitoring-tab">
+            <h3>📊 Monitoring</h3>
+            <div class="monitoring-actions">
+                <button id="getRateLimit" class="btn btn-secondary">Rate Limit Status</button>
+                <button id="getBackupStatus" class="btn btn-secondary">Backup Status</button>
+                <button id="getCacheStats" class="btn btn-secondary">Cache Stats</button>
+                <button id="getDRPlans" class="btn btn-secondary">DR Plans</button>
+            </div>
+            <div class="form-group">
+                <button id="createBackup" class="btn btn-warning">Create Backup</button>
+                <button id="clearCache" class="btn btn-danger">Clear Cache</button>
+            </div>
+            <div class="result-container">
+                <pre id="monitoringResult" class="result"></pre>
+            </div>
+        </div>
+
+        <footer>
+            <p>LLM Document Optimizer API Test Interface</p>
+            <p>Built for testing the deployed API endpoints</p>
+        </footer>
+    </div>
+
+    <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p>Processing...</p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test Launcher</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .launcher {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        p {
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        .buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s ease;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .status {
+            margin-top: 30px;
+            padding: 15px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+        }
+        .endpoints {
+            text-align: left;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="launcher">
+        <h1>🤖 LLM Document Optimizer</h1>
+        <p>Test the API endpoints and verify deployment functionality</p>
+        
+        <div class="buttons">
+            <a href="index.html" class="btn btn-primary">🚀 Launch Test UI</a>
+            <button onclick="startLocalServer()" class="btn btn-secondary">🖥️ Start Local Server</button>
+        </div>
+        
+        <div class="status">
+            <strong>Quick Test URLs:</strong>
+            <div class="endpoints">
+                Local Dev: <a href="http://localhost:8888" target="_blank">http://localhost:8888</a><br>
+                Netlify: <a href="#" id="netlifyUrl" target="_blank">https://your-site.netlify.app</a>
+            </div>
+        </div>
+        
+        <div class="status">
+            <strong>Available Test Features:</strong>
+            <ul style="text-align: left; margin-top: 10px;">
+                <li>🏥 Health checks (basic & detailed)</li>
+                <li>📄 Document optimization with file upload</li>
+                <li>🎯 Model management and capabilities</li>
+                <li>🪙 Token usage and cost estimation</li>
+                <li>📊 System monitoring and admin actions</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function startLocalServer() {
+            alert('To start the local development server:\n\n1. Open terminal in project root\n2. Run: npm run dev\n3. API will be available at http://localhost:8888');
+        }
+
+        // Auto-detect Netlify URL if available
+        if (window.location.hostname.includes('netlify')) {
+            const netlifyUrl = `https://${window.location.hostname}`;
+            document.getElementById('netlifyUrl').href = netlifyUrl;
+            document.getElementById('netlifyUrl').textContent = netlifyUrl;
+        }
+    </script>
+</body>
+</html>
