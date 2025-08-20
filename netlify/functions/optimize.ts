@@ -4,6 +4,7 @@ import multipart from '@fastify/multipart'
 import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import { DocumentService } from '../../src/services/document.service.js'
+import { tokenManager } from '../../src/services/token.service.js'
 import {
   streamToBuffer,
   detectDocumentType,
@@ -97,10 +98,23 @@ app.get('/', async () => ({
   ]
 }))
 
-app.get('/models', async () => ({
-  models: ['gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo'],
-  default: 'gpt-3.5-turbo'
-}))
+app.get('/models', { preHandler: [validateAPIKey] }, async () => {
+  const openaiService = (documentService as any).openaiService
+  
+  return {
+    supported: openaiService.getSupportedModels(),
+    capabilities: openaiService.getSupportedModels().reduce((acc: any, model: string) => {
+      acc[model] = openaiService.getModelCapabilities(model)
+      return acc
+    }, {}),
+    defaults: {
+      clarity: openaiService.getDefaultModelForOptimization('clarity'),
+      style: openaiService.getDefaultModelForOptimization('style'),
+      consolidate: openaiService.getDefaultModelForOptimization('consolidate'),
+      summarize: openaiService.getDefaultModelForOptimization('summarize')
+    }
+  }
+})
 
 app.get('/rate-limit/status', { preHandler: [validateAPIKey] }, async (request) => {
   const apiKey = request.headers['x-api-key']
@@ -119,6 +133,64 @@ app.get('/rate-limit/status', { preHandler: [validateAPIKey] }, async (request) 
     },
     stats: rateLimiter.getStats(),
     enabled: process.env.ENABLE_RATE_LIMITING !== 'false'
+  }
+})
+
+app.get('/tokens/usage', { preHandler: [validateAPIKey] }, async (request) => {
+  const apiKey = request.headers['x-api-key']
+  const userId = typeof apiKey === 'string' ? apiKey : request.ip
+  
+  return tokenManager.getUsageStats(userId)
+})
+
+app.get('/tokens/budget', { preHandler: [validateAPIKey] }, async (request) => {
+  const apiKey = request.headers['x-api-key']
+  const userId = typeof apiKey === 'string' ? apiKey : request.ip
+  
+  const query = request.query as { dailyLimit?: string; monthlyLimit?: string } | null
+  const dailyLimit = parseInt(query?.dailyLimit || '10000', 10)
+  const monthlyLimit = parseInt(query?.monthlyLimit || '250000', 10)
+  
+  return tokenManager.getTokenBudget(userId, dailyLimit, monthlyLimit)
+})
+
+app.get('/tokens/pricing', async () => {
+  return {
+    models: tokenManager.getModelPricing(),
+    lastUpdated: '2024-01-20', // Update this when pricing changes
+    currency: 'USD'
+  }
+})
+
+app.get('/tokens/estimate', { preHandler: [validateAPIKey] }, async (request) => {
+  const query = request.query as { model?: string; tokens?: string } | null
+  const model = query?.model || 'gpt-3.5-turbo'
+  const tokens = parseInt(query?.tokens || '1000', 10)
+  
+  const cost = tokenManager.estimateCost(model, tokens)
+  
+  return {
+    model,
+    estimatedTokens: tokens,
+    estimatedCost: cost,
+    costBreakdown: {
+      inputTokens: Math.floor(tokens * 0.7),
+      outputTokens: Math.floor(tokens * 0.3),
+      inputCost: cost * 0.7,
+      outputCost: cost * 0.3
+    }
+  }
+})
+
+app.get('/tokens/transactions', { preHandler: [validateAPIKey] }, async (request) => {
+  const apiKey = request.headers['x-api-key']
+  const userId = typeof apiKey === 'string' ? apiKey : request.ip
+  const query = request.query as { limit?: string } | null
+  const limit = parseInt(query?.limit || '50', 10)
+  
+  return {
+    transactions: tokenManager.getRecentTransactions(userId, limit),
+    totalCount: tokenManager.getUsageStats(userId).totalRequests
   }
 })
 
@@ -154,7 +226,7 @@ app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) =
       const documents: DocumentInput[] = []
       let optimizationType = 'clarity'
       let mode = 'text'
-      let model = 'gpt-3.5-turbo'
+      let model: string | undefined
 
       for await (const part of parts) {
         if (part.type === 'file') {
@@ -198,10 +270,13 @@ app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) =
         })
       }
 
+      const apiKey = request.headers['x-api-key']
+      const userId = typeof apiKey === 'string' ? apiKey : request.ip
+
       const results =
         optimizationType === 'consolidate'
-          ? [await documentService.consolidateDocuments(documents)]
-          : await documentService.processMultipleDocuments(documents, optimizationType, model)
+          ? [await documentService.consolidateDocuments(documents, model, userId)]
+          : await documentService.processMultipleDocuments(documents, optimizationType, model, userId)
 
       return {
         success: true,
@@ -236,13 +311,17 @@ app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) =
         })
       }
 
+      const apiKey = request.headers['x-api-key']
+      const userId = typeof apiKey === 'string' ? apiKey : request.ip
+
       const results =
         body.optimizationType === 'consolidate'
-          ? [await documentService.consolidateDocuments(body.documents)]
+          ? [await documentService.consolidateDocuments(body.documents, body.model, userId)]
           : await documentService.processMultipleDocuments(
               body.documents,
               body.optimizationType as string,
-              body.model
+              body.model,
+              userId
             )
 
       return {

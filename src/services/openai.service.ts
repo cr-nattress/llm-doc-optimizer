@@ -3,6 +3,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat'
 import type { OpenAIConfig } from '../types/index.js'
 import { ExternalServiceError } from '../middleware/error-handler.js'
 import { RetryManager } from '../utils/retry.js'
+import { tokenManager } from './token.service.js'
 
 export interface OpenAICompletionOptions {
   model?: string
@@ -23,6 +24,7 @@ export interface CompletionMetrics {
   usage: TokenUsage
   duration: number
   requestId?: string
+  cost?: number
 }
 
 export class OpenAIService {
@@ -81,12 +83,17 @@ export class OpenAIService {
       throw new Error('Messages array cannot be empty')
     }
 
+    if (!this.validateModel(model)) {
+      throw new Error(`Unsupported model: ${model}. Supported models: ${this.getSupportedModels().join(', ')}`)
+    }
+
     if (temperature < 0 || temperature > 2) {
       throw new Error('Temperature must be between 0 and 2')
     }
 
-    if (maxTokens < 1 || maxTokens > 8000) {
-      throw new Error('Max tokens must be between 1 and 8000')
+    const capabilities = this.getModelCapabilities(model)
+    if (maxTokens < 1 || maxTokens > capabilities.maxTokens) {
+      throw new Error(`Max tokens must be between 1 and ${capabilities.maxTokens} for model ${model}`)
     }
 
     const operation = async (): Promise<OpenAI.Chat.Completions.ChatCompletion> => {
@@ -123,18 +130,23 @@ export class OpenAIService {
       const duration = Date.now() - startTime
       const usage = completion.usage
 
-      const metrics: CompletionMetrics = {
-        model,
-        usage: {
-          promptTokens: usage?.prompt_tokens || 0,
-          completionTokens: usage?.completion_tokens || 0,
-          totalTokens: usage?.total_tokens || 0
-        },
-        duration,
-        requestId: completion.id
+      const tokenUsage = {
+        promptTokens: usage?.prompt_tokens || 0,
+        completionTokens: usage?.completion_tokens || 0,
+        totalTokens: usage?.total_tokens || 0
       }
 
-      console.log(`✅ Completion created (${duration}ms, ${metrics.usage.totalTokens} tokens)`)
+      const cost = tokenManager.calculateCost(model, tokenUsage)
+
+      const metrics: CompletionMetrics = {
+        model,
+        usage: tokenUsage,
+        duration,
+        requestId: completion.id,
+        cost
+      }
+
+      console.log(`✅ Completion created (${duration}ms, ${metrics.usage.totalTokens} tokens, $${cost.toFixed(4)})`)
 
       return { completion, metrics }
     } catch (error) {
@@ -156,6 +168,16 @@ export class OpenAIService {
       maxTokens = 4000,
       user = 'llm-doc-optimizer'
     } = options
+
+    // Validate model and capabilities
+    if (!this.validateModel(model)) {
+      throw new Error(`Unsupported model: ${model}. Supported models: ${this.getSupportedModels().join(', ')}`)
+    }
+
+    const capabilities = this.getModelCapabilities(model)
+    if (!capabilities.supportsStreaming) {
+      throw new Error(`Model ${model} does not support streaming`)
+    }
 
     const operation = async (): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> => {
       this.requestCount++
@@ -210,6 +232,72 @@ export class OpenAIService {
       this.handleOpenAIError(error)
       throw error
     }
+  }
+
+  getSupportedModels(): string[] {
+    return [
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-4-turbo',
+      'gpt-4',
+      'gpt-3.5-turbo'
+    ]
+  }
+
+  validateModel(model: string): boolean {
+    return this.getSupportedModels().includes(model)
+  }
+
+  getModelCapabilities(model: string): {
+    maxTokens: number
+    supportsStreaming: boolean
+    contextWindow: number
+    costTier: 'low' | 'medium' | 'high'
+  } {
+    const capabilities: Record<string, any> = {
+      'gpt-4o': {
+        maxTokens: 4096,
+        supportsStreaming: true,
+        contextWindow: 128000,
+        costTier: 'high'
+      },
+      'gpt-4o-mini': {
+        maxTokens: 4096,
+        supportsStreaming: true,
+        contextWindow: 128000,
+        costTier: 'low'
+      },
+      'gpt-4-turbo': {
+        maxTokens: 4096,
+        supportsStreaming: true,
+        contextWindow: 128000,
+        costTier: 'high'
+      },
+      'gpt-4': {
+        maxTokens: 4096,
+        supportsStreaming: true,
+        contextWindow: 8192,
+        costTier: 'high'
+      },
+      'gpt-3.5-turbo': {
+        maxTokens: 4096,
+        supportsStreaming: true,
+        contextWindow: 16385,
+        costTier: 'low'
+      }
+    }
+
+    return capabilities[model] || capabilities['gpt-3.5-turbo']
+  }
+
+  getDefaultModelForOptimization(optimizationType: string): string {
+    const defaultModels: Record<string, string> = {
+      'clarity': 'gpt-3.5-turbo',
+      'style': 'gpt-4o-mini',
+      'consolidate': 'gpt-4-turbo'
+    }
+
+    return defaultModels[optimizationType] || 'gpt-3.5-turbo'
   }
 
   estimateTokens(text: string): number {

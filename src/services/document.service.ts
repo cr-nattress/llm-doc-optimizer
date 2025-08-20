@@ -9,6 +9,7 @@ import type {
   OpenAIConfig
 } from '../types/index.js'
 import { OpenAIService, type CompletionMetrics } from './openai.service.js'
+import { tokenManager } from './token.service.js'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat'
 
 export class DocumentService {
@@ -20,35 +21,47 @@ export class DocumentService {
   async optimizeDocument(
     document: DocumentInput,
     optimizationType: string,
-    model: string = 'gpt-3.5-turbo'
+    model?: string,
+    userId?: string
   ): Promise<OptimizationResult> {
     const startTime = Date.now()
+
+    // Get default model for optimization type if none provided
+    const selectedModel = model || this.openaiService.getDefaultModelForOptimization(optimizationType)
 
     try {
       const messages = this.buildOptimizationPrompt(document, optimizationType)
       
       const { completion, metrics } = await this.openaiService.createCompletion(messages, {
-        model,
+        model: selectedModel,
         temperature: 0.1,
         maxTokens: 4000
       })
 
       const optimizedContent = completion.choices[0]?.message.content || ''
-      const indexes = await this.generateIndexes(document.content, model)
+      const indexes = await this.generateIndexes(document.content, selectedModel)
 
       const metadata: DocumentMetadata = {
         originalLength: document.content.length,
         optimizedLength: optimizedContent.length,
         compressionRatio: optimizedContent.length / document.content.length,
         processingTime: Date.now() - startTime,
-        model,
+        model: selectedModel,
         timestamp: new Date().toISOString(),
         tokenUsage: {
           promptTokens: metrics.usage.promptTokens,
           completionTokens: metrics.usage.completionTokens,
           totalTokens: metrics.usage.totalTokens
         },
-        cost: this.openaiService.calculateCost(model, metrics.usage)
+        cost: metrics.cost || 0
+      }
+
+      // Record token transaction if userId is provided
+      if (userId) {
+        tokenManager.recordTransaction(userId, metrics, 'completion', {
+          optimizationType,
+          documentCount: 1
+        })
       }
 
       return {
@@ -67,7 +80,7 @@ export class DocumentService {
           optimizedLength: 0,
           compressionRatio: 0,
           processingTime: Date.now() - startTime,
-          model,
+          model: selectedModel,
           timestamp: new Date().toISOString()
         },
         status: 'rejected',
@@ -79,11 +92,12 @@ export class DocumentService {
   async processMultipleDocuments(
     documents: DocumentInput[],
     optimizationType: string,
-    model?: string
+    model?: string,
+    userId?: string
   ): Promise<OptimizationResult[]> {
-    const selectedModel = model || 'gpt-3.5-turbo'
+    const selectedModel = model || this.openaiService.getDefaultModelForOptimization(optimizationType)
     const promises = documents.map((doc) =>
-      this.optimizeDocument(doc, optimizationType, selectedModel)
+      this.optimizeDocument(doc, optimizationType, selectedModel, userId)
     )
 
     const results = await Promise.allSettled(promises)
@@ -112,9 +126,13 @@ export class DocumentService {
 
   async consolidateDocuments(
     documents: DocumentInput[],
-    model: string = 'gpt-3.5-turbo'
+    model?: string,
+    userId?: string
   ): Promise<OptimizationResult> {
     const startTime = Date.now()
+
+    // Get default model for consolidation if none provided
+    const selectedModel = model || this.openaiService.getDefaultModelForOptimization('consolidate')
 
     try {
       const consolidatedContent = documents
@@ -124,27 +142,35 @@ export class DocumentService {
       const messages = this.buildConsolidationPrompt(documents)
       
       const { completion, metrics } = await this.openaiService.createCompletion(messages, {
-        model,
+        model: selectedModel,
         temperature: 0.1,
         maxTokens: 4000
       })
 
       const optimizedContent = completion.choices[0]?.message.content || ''
-      const indexes = await this.generateIndexes(consolidatedContent, model)
+      const indexes = await this.generateIndexes(consolidatedContent, selectedModel)
 
       const metadata: DocumentMetadata = {
         originalLength: consolidatedContent.length,
         optimizedLength: optimizedContent.length,
         compressionRatio: optimizedContent.length / consolidatedContent.length,
         processingTime: Date.now() - startTime,
-        model,
+        model: selectedModel,
         timestamp: new Date().toISOString(),
         tokenUsage: {
           promptTokens: metrics.usage.promptTokens,
           completionTokens: metrics.usage.completionTokens,
           totalTokens: metrics.usage.totalTokens
         },
-        cost: this.openaiService.calculateCost(model, metrics.usage)
+        cost: metrics.cost || 0
+      }
+
+      // Record token transaction if userId is provided
+      if (userId) {
+        tokenManager.recordTransaction(userId, metrics, 'completion', {
+          optimizationType: 'consolidate',
+          documentCount: documents.length
+        })
       }
 
       return {
@@ -165,7 +191,7 @@ export class DocumentService {
           optimizedLength: 0,
           compressionRatio: 0,
           processingTime: Date.now() - startTime,
-          model,
+          model: selectedModel,
           timestamp: new Date().toISOString()
         },
         status: 'rejected',

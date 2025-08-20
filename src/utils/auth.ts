@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import type { JWTPayload } from '../types/index.js'
+import { tokenManager } from '../services/token.service.js'
 
 export interface AuthenticatedRequest extends FastifyRequest {
   jwtUser?: JWTPayload
@@ -233,6 +234,59 @@ export class RateLimiter {
       requestCount: totalRequests,
       tokenCount: totalTokens,
       userCount: this.requests.size
+    }
+  }
+
+  /**
+   * Check both rate limits and token budgets
+   */
+  async checkLimitsAndBudget(
+    identifier: string, 
+    estimatedTokens: number = 1000,
+    dailyTokenLimit?: number,
+    monthlyTokenLimit?: number
+  ): Promise<{
+    allowed: boolean
+    rateLimitInfo: RateLimitInfo
+    budgetCheck?: {
+      allowed: boolean
+      reason?: string
+      budget: any
+    }
+    reason?: string
+  }> {
+    // Check rate limits first
+    const rateLimitInfo = await this.checkLimit(identifier)
+    
+    if (!rateLimitInfo.allowed) {
+      return {
+        allowed: false,
+        rateLimitInfo,
+        reason: 'Rate limit exceeded'
+      }
+    }
+
+    // Check token budget
+    const budgetCheck = tokenManager.checkBudgetLimits(
+      identifier,
+      estimatedTokens,
+      dailyTokenLimit,
+      monthlyTokenLimit
+    )
+
+    if (!budgetCheck.allowed) {
+      return {
+        allowed: false,
+        rateLimitInfo,
+        budgetCheck,
+        reason: budgetCheck.reason
+      }
+    }
+
+    return {
+      allowed: true,
+      rateLimitInfo,
+      budgetCheck
     }
   }
 }
