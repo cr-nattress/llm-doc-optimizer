@@ -14,6 +14,9 @@ import {
 import { errorHandler, notFoundHandler } from '../../src/middleware/error-handler.js'
 import { validateAPIKey, rateLimiter } from '../../src/utils/auth.js'
 import { OptimizationRequestSchema, validateRequest } from '../../src/utils/validation.js'
+import { errorStrategyManager, withGracefulDegradation } from '../../src/utils/error-strategies.js'
+import { errorReporter } from '../../src/utils/error-reporter.js'
+import { healthChecker } from '../../src/utils/resilience.js'
 import type { DocumentInput, OptimizationRequest } from '../../src/types/index.js'
 
 const app = Fastify({
@@ -59,6 +62,28 @@ const documentService = new DocumentService({
   maxRetries: 3
 })
 
+// Register health checks
+healthChecker.register('openai', async () => {
+  try {
+    return await (documentService as any).openaiService.validateConnection()
+  } catch {
+    return false
+  }
+})
+
+healthChecker.register('documentService', async () => {
+  return errorStrategyManager.isServiceHealthy('documentService')
+})
+
+healthChecker.register('tokenManager', async () => {
+  try {
+    tokenManager.getGlobalStats()
+    return true
+  } catch {
+    return false
+  }
+})
+
 app.setErrorHandler(errorHandler)
 app.setNotFoundHandler(notFoundHandler)
 
@@ -71,9 +96,12 @@ app.get('/health', async () => ({
 
 app.get('/health/detailed', async () => {
   const circuitBreakerStatus = documentService.getCircuitBreakerStatus()
+  const healthResults = await healthChecker.runChecks()
+  const errorStats = errorStrategyManager.getErrorStats()
+  const reporterStats = errorReporter.getStats()
   
   return {
-    status: 'ok',
+    status: healthResults.healthy ? 'ok' : 'degraded',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     version: '1.0.0',
@@ -84,6 +112,17 @@ app.get('/health/detailed', async () => {
         lastFailureTime: circuitBreakerStatus.lastFailureTime,
         healthy: circuitBreakerStatus.isHealthy
       }
+    },
+    healthChecks: healthResults.checks,
+    errorStats: {
+      totalErrors: errorStats.totalErrors,
+      errorsBySeverity: errorStats.errorsBySeverity,
+      recentErrorCount: errorStats.recentErrors.length
+    },
+    errorReporting: {
+      enabled: reporterStats.isEnabled,
+      pendingReports: reporterStats.pendingReports,
+      totalReported: reporterStats.totalReported
     }
   }
 })

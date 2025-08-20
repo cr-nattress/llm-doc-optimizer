@@ -4,6 +4,9 @@ import type { OpenAIConfig } from '../types/index.js'
 import { ExternalServiceError } from '../middleware/error-handler.js'
 import { RetryManager } from '../utils/retry.js'
 import { tokenManager } from './token.service.js'
+import { errorStrategyManager, withGracefulDegradation } from '../utils/error-strategies.js'
+import { errorReporter } from '../utils/error-reporter.js'
+import { resiliencePattern, adaptiveTimeout, type ResilienceConfig } from '../utils/resilience.js'
 
 export interface OpenAICompletionOptions {
   model?: string
@@ -96,66 +99,76 @@ export class OpenAIService {
       throw new Error(`Max tokens must be between 1 and ${capabilities.maxTokens} for model ${model}`)
     }
 
-    const operation = async (): Promise<OpenAI.Chat.Completions.ChatCompletion> => {
-      this.requestCount++
-      console.log(`🤖 Creating OpenAI completion (model: ${model}, tokens: ${maxTokens})`)
-
-      const completion = await this.client.chat.completions.create({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: false, // Ensure stream is false for non-streaming calls
-        user,
-        response_format: { type: 'text' }
-      }) as OpenAI.Chat.Completions.ChatCompletion
-
-      const usage = completion.usage
-      if (usage) {
-        this.totalTokensUsed += usage.total_tokens
-      }
-
-      return completion
+    const context = {
+      operation: 'openai_completion',
+      model,
+      timestamp: new Date(),
+      metadata: { temperature, maxTokens, messageCount: messages.length }
     }
 
-    const context = `OpenAI ${model} completion`
-    
-    try {
-      const completion = await this.retryManager.executeWithRetry(operation, context, {
-        maxAttempts: 3,
-        baseDelay: 2000,
-        maxDelay: 30000
-      })
+    return withGracefulDegradation(
+      async () => {
+        const operation = async (): Promise<OpenAI.Chat.Completions.ChatCompletion> => {
+          this.requestCount++
+          console.log(`🤖 Creating OpenAI completion (model: ${model}, tokens: ${maxTokens})`)
 
-      const duration = Date.now() - startTime
-      const usage = completion.usage
+          const completion = await this.client.chat.completions.create({
+            model,
+            messages,
+            temperature,
+            max_tokens: maxTokens,
+            stream: false,
+            user,
+            response_format: { type: 'text' }
+          }) as OpenAI.Chat.Completions.ChatCompletion
 
-      const tokenUsage = {
-        promptTokens: usage?.prompt_tokens || 0,
-        completionTokens: usage?.completion_tokens || 0,
-        totalTokens: usage?.total_tokens || 0
+          const usage = completion.usage
+          if (usage) {
+            this.totalTokensUsed += usage.total_tokens
+          }
+
+          return completion
+        }
+
+        const completion = await resiliencePattern.executeWithResilience(
+          operation,
+          () => this.createFallbackCompletion(messages, model),
+          `openai-completion-${model}`
+        )
+
+        const duration = Date.now() - startTime
+        adaptiveTimeout.recordResponseTime(duration)
+        
+        const usage = completion.usage
+        const tokenUsage = {
+          promptTokens: usage?.prompt_tokens || 0,
+          completionTokens: usage?.completion_tokens || 0,
+          totalTokens: usage?.total_tokens || 0
+        }
+
+        const cost = tokenManager.calculateCost(model, tokenUsage)
+        const metrics: CompletionMetrics = {
+          model,
+          usage: tokenUsage,
+          duration,
+          requestId: completion.id,
+          cost
+        }
+
+        console.log(`✅ Completion created (${duration}ms, ${metrics.usage.totalTokens} tokens, $${cost.toFixed(4)})`)
+        return { completion, metrics }
+      },
+      context,
+      {
+        completion: this.createFallbackCompletion(messages, model),
+        metrics: {
+          model,
+          usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          duration: Date.now() - startTime,
+          cost: 0
+        }
       }
-
-      const cost = tokenManager.calculateCost(model, tokenUsage)
-
-      const metrics: CompletionMetrics = {
-        model,
-        usage: tokenUsage,
-        duration,
-        requestId: completion.id,
-        cost
-      }
-
-      console.log(`✅ Completion created (${duration}ms, ${metrics.usage.totalTokens} tokens, $${cost.toFixed(4)})`)
-
-      return { completion, metrics }
-    } catch (error) {
-      const duration = Date.now() - startTime
-      console.error(`❌ OpenAI completion failed after ${duration}ms:`, this.extractErrorMessage(error))
-      
-      this.handleOpenAIError(error)
-      throw error
-    }
+    )
   }
 
   async createStreamingCompletion(
@@ -350,7 +363,37 @@ export class OpenAIService {
     this.retryManager.reset()
   }
 
+  private createFallbackCompletion(messages: ChatCompletionMessageParam[], model: string): OpenAI.Chat.Completions.ChatCompletion {
+    const fallbackContent = "I apologize, but I'm currently unable to process your request due to a temporary service issue. Please try again in a few moments."
+    
+    return {
+      id: `fallback-${Date.now()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [{
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: fallbackContent
+        },
+        finish_reason: 'stop'
+      }],
+      usage: {
+        prompt_tokens: 0,
+        completion_tokens: fallbackContent.split(' ').length,
+        total_tokens: fallbackContent.split(' ').length
+      }
+    } as OpenAI.Chat.Completions.ChatCompletion
+  }
+
   private handleOpenAIError(error: unknown): void {
+    const context = {
+      operation: 'openai_error_handling',
+      timestamp: new Date(),
+      metadata: { errorType: error?.constructor?.name }
+    }
+
     if (error instanceof OpenAI.APIError) {
       const errorInfo = {
         status: error.status,
@@ -361,6 +404,10 @@ export class OpenAIService {
       }
 
       console.error('🚨 OpenAI API Error:', errorInfo)
+
+      // Report error
+      const strategy = errorStrategyManager.analyzeError(error, context)
+      errorReporter.report(error, context, strategy).catch(console.error)
 
       // Convert to our error types for better handling
       if (error.status === 401) {
@@ -375,6 +422,9 @@ export class OpenAIService {
         throw new ExternalServiceError(`OpenAI: ${error.message}`, error)
       }
     } else if (error instanceof Error) {
+      const strategy = errorStrategyManager.analyzeError(error, context)
+      errorReporter.report(error, context, strategy).catch(console.error)
+
       if (error.message.includes('timeout')) {
         throw new ExternalServiceError('OpenAI: Request timeout', error)
       } else if (error.message.includes('network')) {
@@ -383,7 +433,11 @@ export class OpenAIService {
         throw new ExternalServiceError(`OpenAI: ${error.message}`, error)
       }
     } else {
-      throw new ExternalServiceError('OpenAI: Unknown error occurred', new Error(String(error)))
+      const unknownError = new Error(String(error))
+      const strategy = errorStrategyManager.analyzeError(unknownError, context)
+      errorReporter.report(unknownError, context, strategy).catch(console.error)
+      
+      throw new ExternalServiceError('OpenAI: Unknown error occurred', unknownError)
     }
   }
 
