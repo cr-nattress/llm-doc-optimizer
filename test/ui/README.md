@@ -4,10 +4,15 @@ A comprehensive web-based testing interface for the LLM Document Optimizer API.
 
 ## 🚀 Quick Start
 
-1. **Open the UI**: Open `index.html` in your web browser
-2. **Configure API**: Set your API URL and API key
+### **Method 1: Local Web Server (Recommended)**
+1. **Start Server**: Double-click `start-test-ui.bat` (Windows) or run `./start-test-ui.sh` (Linux/Mac)
+2. **Open Browser**: Go to `http://localhost:3000`
 3. **Test Connection**: Click "Test Connection" to verify connectivity
 4. **Explore Features**: Use the tabs to test different API endpoints
+
+### **Method 2: Direct File Access**
+1. **Open the UI**: Open `index.html` in your web browser
+2. **Note**: May have CORS issues with some browsers
 
 ## 🎯 Features
 

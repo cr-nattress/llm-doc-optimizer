@@ -49,13 +49,25 @@ app.register(multipart, {
   }
 })
 
-app.register(cors, getCORSOptions())
+// Simple CORS configuration for testing
+app.register(cors, {
+  origin: true,
+  credentials: false,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+})
 
-// Additional CORS headers for testing
-app.addHook('onSend', async (request, reply) => {
+// Ensure CORS headers are always present
+app.addHook('onRequest', async (request, reply) => {
   reply.header('Access-Control-Allow-Origin', '*')
   reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
   reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
+  
+  // Handle preflight OPTIONS requests
+  if (request.method === 'OPTIONS') {
+    reply.code(200).send()
+    return
+  }
 })
 
 if (process.env.JWT_SECRET) {
