@@ -1,12 +1,14 @@
 import { defineConfig } from 'vitest/config'
 import { resolve } from 'path'
 
+const isE2E = process.env.VITEST_ENV === 'e2e'
+
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
     setupFiles: ['./test/setup.ts'],
-    exclude: ['test/e2e/**'],
+    exclude: isE2E ? ['test/unit/**'] : [],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],

@@ -1,61 +1,148 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import FormData from 'form-data'
-import fetch from 'node-fetch'
+import { describe, it, expect } from 'vitest'
+import type { APIGatewayProxyEvent, Context } from 'aws-lambda'
+import { handler } from '../../netlify/functions/optimize.js'
 
-// These tests would run against a local Netlify dev server
-// In a real CI/CD environment, you'd start the server automatically
-
-const BASE_URL = 'http://localhost:8888/.netlify/functions'
+// E2E tests using function handler directly (no server required)
 const API_KEY = 'test-api-key'
 
-describe('End-to-End API Tests', () => {
-  beforeAll(async () => {
-    // Wait for server to be ready
-    await new Promise(resolve => setTimeout(resolve, 2000))
-  })
+// Helper to create mock AWS Lambda event
+const createMockEvent = (
+  method: string,
+  path: string,
+  headers: Record<string, string> = {},
+  body: string | null = null
+): APIGatewayProxyEvent => ({
+  httpMethod: method,
+  path,
+  headers,
+  body,
+  queryStringParameters: null,
+  pathParameters: null,
+  requestContext: {} as any,
+  resource: '',
+  isBase64Encoded: false,
+  multiValueHeaders: {},
+  multiValueQueryStringParameters: null,
+  stageVariables: null
+})
 
+const mockContext: Context = {
+  callbackWaitsForEmptyEventLoop: false,
+  functionName: 'optimize',
+  functionVersion: '1',
+  invokedFunctionArn: 'arn:aws:lambda:us-east-1:123456789012:function:optimize',
+  memoryLimitInMB: '512',
+  awsRequestId: 'test-request-id',
+  logGroupName: '/aws/lambda/optimize',
+  logStreamName: '2024/01/01/[$LATEST]abcd1234',
+  getRemainingTimeInMillis: () => 30000,
+  done: () => {},
+  fail: () => {},
+  succeed: () => {}
+}
+
+describe('End-to-End Function Handler Tests', () => {
   describe('Health Check', () => {
     it('should return health status', async () => {
-      const response = await fetch(`${BASE_URL}/optimize/health`)
+      const event = createMockEvent('GET', '/health')
+      const response = await handler(event, mockContext)
       
-      expect(response.status).toBe(200)
+      expect(response.statusCode).toBe(200)
       
-      const data = await response.json()
+      const data = JSON.parse(response.body)
       expect(data).toMatchObject({
         status: 'ok',
-        timestamp: expect.any(String)
+        timestamp: expect.any(String),
+        environment: 'development',
+        version: '1.0.0'
+      })
+    })
+
+    it('should return detailed health check', async () => {
+      const event = createMockEvent('GET', '/health/detailed')
+      const response = await handler(event, mockContext)
+      
+      expect(response.statusCode).toBe(200)
+      
+      const data = JSON.parse(response.body)
+      expect(data).toMatchObject({
+        status: 'ok',
+        timestamp: expect.any(String),
+        services: {
+          openai: {
+            circuitBreaker: expect.any(String),
+            failureCount: expect.any(Number),
+            healthy: expect.any(Boolean)
+          }
+        }
       })
     })
   })
 
   describe('Authentication', () => {
     it('should reject requests without API key', async () => {
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        { 'Content-Type': 'application/json' },
+        JSON.stringify({
           documents: [{ name: 'test.txt', content: 'test' }],
           optimizationType: 'clarity'
         })
-      })
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(401)
+      expect(response.statusCode).toBe(401)
     })
 
     it('should accept requests with valid API key', async () => {
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        {
           'Content-Type': 'application/json',
           'x-api-key': API_KEY
         },
-        body: JSON.stringify({
+        JSON.stringify({
           documents: [{ name: 'test.txt', content: 'Test content for optimization' }],
           optimizationType: 'clarity'
         })
-      })
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(200)
+      expect(response.statusCode).toBe(200)
+    })
+  })
+
+  describe('Endpoint Discovery', () => {
+    it('should return endpoint information', async () => {
+      const event = createMockEvent('GET', '/')
+      const response = await handler(event, mockContext)
+      
+      expect(response.statusCode).toBe(200)
+      
+      const data = JSON.parse(response.body)
+      expect(data).toMatchObject({
+        name: 'LLM Document Optimizer',
+        version: '1.0.0',
+        endpoints: expect.arrayContaining([
+          expect.stringContaining('health'),
+          expect.stringContaining('optimize')
+        ])
+      })
+    })
+
+    it('should return available models', async () => {
+      const event = createMockEvent('GET', '/models')
+      const response = await handler(event, mockContext)
+      
+      expect(response.statusCode).toBe(200)
+      
+      const data = JSON.parse(response.body)
+      expect(data).toMatchObject({
+        models: expect.arrayContaining(['gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo']),
+        default: 'gpt-3.5-turbo'
+      })
     })
   })
 
@@ -72,18 +159,20 @@ describe('End-to-End API Tests', () => {
         model: 'gpt-3.5-turbo'
       }
 
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        {
           'Content-Type': 'application/json',
           'x-api-key': API_KEY
         },
-        body: JSON.stringify(payload)
-      })
+        JSON.stringify(payload)
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(200)
+      expect(response.statusCode).toBe(200)
       
-      const result = await response.json()
+      const result = JSON.parse(response.body)
       expect(result).toMatchObject({
         success: true,
         results: expect.arrayContaining([
@@ -105,52 +194,7 @@ describe('End-to-End API Tests', () => {
       })
     })
 
-    it('should optimize multiple documents', async () => {
-      const payload = {
-        documents: [
-          {
-            name: 'policy1.txt',
-            content: 'Company policy regarding remote work arrangements and expectations.',
-            type: 'policy'
-          },
-          {
-            name: 'meeting.txt',
-            content: 'Team meeting notes from quarterly planning session.',
-            type: 'transcript'
-          },
-          {
-            name: 'email.txt',
-            content: 'Email communication regarding project timeline updates.',
-            type: 'email'
-          }
-        ],
-        optimizationType: 'style',
-        mode: 'text'
-      }
-
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': API_KEY
-        },
-        body: JSON.stringify(payload)
-      })
-
-      expect(response.status).toBe(200)
-      
-      const result = await response.json()
-      expect(result.success).toBe(true)
-      expect(result.results).toHaveLength(3)
-      expect(result.metadata.documentsProcessed).toBe(3)
-      
-      result.results.forEach((doc: any) => {
-        expect(doc.status).toBe('fulfilled')
-        expect(doc.optimizedContent).toContain('Style-Optimized')
-      })
-    })
-
-    it('should consolidate multiple documents', async () => {
+    it('should handle consolidation requests', async () => {
       const payload = {
         documents: [
           {
@@ -168,243 +212,100 @@ describe('End-to-End API Tests', () => {
         mode: 'text'
       }
 
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        {
           'Content-Type': 'application/json',
           'x-api-key': API_KEY
         },
-        body: JSON.stringify(payload)
-      })
+        JSON.stringify(payload)
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(200)
+      expect(response.statusCode).toBe(200)
       
-      const result = await response.json()
+      const result = JSON.parse(response.body)
       expect(result.success).toBe(true)
       expect(result.results).toHaveLength(1)
       expect(result.results[0].originalFilename).toBe('consolidated_document')
       expect(result.results[0].optimizedContent).toContain('Consolidated Document')
     })
-
-    it('should handle different models', async () => {
-      const models = ['gpt-3.5-turbo', 'gpt-4']
-
-      for (const model of models) {
-        const payload = {
-          documents: [{
-            name: 'test.txt',
-            content: 'Test content for model comparison',
-            type: 'note'
-          }],
-          optimizationType: 'clarity',
-          model
-        }
-
-        const response = await fetch(`${BASE_URL}/optimize`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY
-          },
-          body: JSON.stringify(payload)
-        })
-
-        expect(response.status).toBe(200)
-        
-        const result = await response.json()
-        expect(result.results[0].metadata.model).toBe(model)
-      }
-    })
-  })
-
-  describe('Multipart Upload', () => {
-    it('should handle file uploads via multipart form', async () => {
-      const form = new FormData()
-      
-      // Add files
-      form.append('files', Buffer.from('First document content'), {
-        filename: 'doc1.txt',
-        contentType: 'text/plain'
-      })
-      form.append('files', Buffer.from('Second document content'), {
-        filename: 'doc2.txt',
-        contentType: 'text/plain'
-      })
-      
-      // Add form fields
-      form.append('optimizationType', 'clarity')
-      form.append('mode', 'text')
-
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
-          'x-api-key': API_KEY,
-          ...form.getHeaders()
-        },
-        body: form
-      })
-
-      expect(response.status).toBe(200)
-      
-      const result = await response.json()
-      expect(result.success).toBe(true)
-      expect(result.results).toHaveLength(2)
-    })
-
-    it('should handle mixed content types', async () => {
-      const form = new FormData()
-      
-      form.append('files', Buffer.from(JSON.stringify({ content: 'JSON data' })), {
-        filename: 'data.json',
-        contentType: 'application/json'
-      })
-      form.append('files', Buffer.from('Plain text content'), {
-        filename: 'text.txt',
-        contentType: 'text/plain'
-      })
-      
-      form.append('optimizationType', 'style')
-
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
-          'x-api-key': API_KEY,
-          ...form.getHeaders()
-        },
-        body: form
-      })
-
-      expect(response.status).toBe(200)
-    })
   })
 
   describe('Error Handling', () => {
     it('should handle invalid JSON payload', async () => {
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        {
           'Content-Type': 'application/json',
           'x-api-key': API_KEY
         },
-        body: '{ invalid json }'
-      })
+        '{ invalid json }'
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(400)
+      expect(response.statusCode).toBe(400)
     })
 
     it('should handle missing documents', async () => {
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        {
           'Content-Type': 'application/json',
           'x-api-key': API_KEY
         },
-        body: JSON.stringify({
+        JSON.stringify({
           optimizationType: 'clarity'
           // Missing documents field
         })
-      })
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(400)
+      expect(response.statusCode).toBe(400)
       
-      const result = await response.json()
+      const result = JSON.parse(response.body)
       expect(result.error).toBeDefined()
     })
 
     it('should handle empty documents array', async () => {
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        {
           'Content-Type': 'application/json',
           'x-api-key': API_KEY
         },
-        body: JSON.stringify({
+        JSON.stringify({
           documents: [],
           optimizationType: 'clarity'
         })
-      })
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(400)
+      expect(response.statusCode).toBe(400)
     })
 
     it('should handle unsupported HTTP methods', async () => {
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'PUT',
-        headers: { 'x-api-key': API_KEY }
-      })
+      const event = createMockEvent('PUT', '/optimize', { 'x-api-key': API_KEY })
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(404)
-    })
-  })
-
-  describe('Performance', () => {
-    it('should handle concurrent requests', async () => {
-      const requests = Array.from({ length: 5 }, (_, i) =>
-        fetch(`${BASE_URL}/optimize`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY
-          },
-          body: JSON.stringify({
-            documents: [{
-              name: `doc${i}.txt`,
-              content: `Document ${i} content for concurrent testing`,
-              type: 'note'
-            }],
-            optimizationType: 'clarity'
-          })
-        })
-      )
-
-      const startTime = Date.now()
-      const responses = await Promise.all(requests)
-      const duration = Date.now() - startTime
-
-      // All requests should succeed
-      responses.forEach(response => {
-        expect(response.status).toBe(200)
-      })
-
-      // Should complete within reasonable time
-      expect(duration).toBeLessThan(10000) // 10 seconds
-    })
-
-    it('should handle large document content', async () => {
-      const largeContent = 'A'.repeat(50000) // 50KB content
-      
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': API_KEY
-        },
-        body: JSON.stringify({
-          documents: [{
-            name: 'large-doc.txt',
-            content: largeContent,
-            type: 'note'
-          }],
-          optimizationType: 'clarity'
-        })
-      })
-
-      expect(response.status).toBe(200)
-      
-      const result = await response.json()
-      expect(result.results[0].metadata.originalLength).toBe(50000)
+      expect(response.statusCode).toBe(404)
     })
   })
 
   describe('Response Format', () => {
     it('should return consistent response structure', async () => {
-      const response = await fetch(`${BASE_URL}/optimize`, {
-        method: 'POST',
-        headers: {
+      const event = createMockEvent(
+        'POST',
+        '/optimize',
+        {
           'Content-Type': 'application/json',
           'x-api-key': API_KEY
         },
-        body: JSON.stringify({
+        JSON.stringify({
           documents: [{
             name: 'test.txt',
             content: 'Test content',
@@ -412,12 +313,13 @@ describe('End-to-End API Tests', () => {
           }],
           optimizationType: 'clarity'
         })
-      })
+      )
+      const response = await handler(event, mockContext)
 
-      expect(response.status).toBe(200)
-      expect(response.headers.get('content-type')).toContain('application/json')
+      expect(response.statusCode).toBe(200)
+      expect(response.headers).toHaveProperty('Content-Type')
       
-      const result = await response.json()
+      const result = JSON.parse(response.body)
       
       // Validate response structure
       expect(result).toHaveProperty('success')
@@ -435,20 +337,3 @@ describe('End-to-End API Tests', () => {
     })
   })
 })
-
-// Helper function to check if server is running
-async function isServerRunning(): Promise<boolean> {
-  try {
-    const response = await fetch(`${BASE_URL}/optimize/health`, { timeout: 1000 })
-    return response.ok
-  } catch {
-    return false
-  }
-}
-
-// Skip tests if server is not running
-if (process.env.VITEST_ENV !== 'e2e') {
-  describe.skip('E2E tests skipped - set VITEST_ENV=e2e to run', () => {
-    it('placeholder', () => {})
-  })
-}

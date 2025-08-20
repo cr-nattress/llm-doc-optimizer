@@ -102,17 +102,47 @@ app.get('/models', async () => ({
   default: 'gpt-3.5-turbo'
 }))
 
+app.get('/rate-limit/status', { preHandler: [validateAPIKey] }, async (request) => {
+  const apiKey = request.headers['x-api-key']
+  const identifier = typeof apiKey === 'string' ? apiKey : request.ip
+  
+  return {
+    requests: {
+      remaining: rateLimiter.getRemainingRequests(identifier),
+      limit: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+      resetTime: rateLimiter.getResetTime(identifier)
+    },
+    tokens: {
+      remaining: rateLimiter.getRemainingTokens(identifier),
+      limit: parseInt(process.env.RATE_LIMIT_TOKENS || '50000', 10),
+      resetTime: rateLimiter.getTokenResetTime(identifier)
+    },
+    stats: rateLimiter.getStats(),
+    enabled: process.env.ENABLE_RATE_LIMITING !== 'false'
+  }
+})
+
 app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) => {
   try {
-    if (process.env.ENABLE_RATE_LIMITING === 'true') {
+    if (process.env.ENABLE_RATE_LIMITING !== 'false') {
       const apiKey = request.headers['x-api-key']
       const identifier = typeof apiKey === 'string' ? apiKey : request.ip
-      const allowed = await rateLimiter.checkLimit(identifier)
+      const rateLimitInfo = await rateLimiter.checkLimit(identifier)
       
-      if (!allowed) {
+      // Add rate limit headers to response
+      reply.header('X-RateLimit-Limit', rateLimitInfo.limit.toString())
+      reply.header('X-RateLimit-Remaining', rateLimitInfo.remaining.toString())
+      reply.header('X-RateLimit-Reset', Math.ceil(rateLimitInfo.resetTime / 1000).toString())
+      
+      if (!rateLimitInfo.allowed) {
         return reply.code(429).send({
           error: 'Rate limit exceeded',
-          code: 'RATE_LIMIT',
+          code: 'RATE_LIMIT_EXCEEDED',
+          details: {
+            limit: rateLimitInfo.limit,
+            remaining: rateLimitInfo.remaining,
+            resetTime: rateLimitInfo.resetTime
+          },
           timestamp: new Date().toISOString()
         })
       }

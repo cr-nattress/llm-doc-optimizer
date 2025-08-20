@@ -10,7 +10,7 @@ import {
 describe('Authentication Utils', () => {
   describe('validateAPIKey', () => {
     it('should accept valid API key from x-api-key header', async () => {
-      process.env.API_KEY = 'valid-key'
+      process.env.API_KEYS = 'valid-key,another-key'
       
       const request = testHelpers.createMockRequest({
         headers: { 'x-api-key': 'valid-key' }
@@ -24,7 +24,7 @@ describe('Authentication Utils', () => {
     })
 
     it('should accept valid API key from authorization header', async () => {
-      process.env.API_KEY = 'valid-key'
+      process.env.API_KEYS = 'valid-key,another-key'
       
       const request = testHelpers.createMockRequest({
         headers: { authorization: 'valid-key' }
@@ -245,8 +245,8 @@ describe('RateLimiter', () => {
       const identifier = 'user123'
 
       for (let i = 0; i < 5; i++) {
-        const allowed = await rateLimiter.checkLimit(identifier)
-        expect(allowed).toBe(true)
+        const result = await rateLimiter.checkLimit(identifier)
+        expect(result.allowed).toBe(true)
       }
     })
 
@@ -259,8 +259,8 @@ describe('RateLimiter', () => {
       }
 
       // Next request should be blocked
-      const blocked = await rateLimiter.checkLimit(identifier)
-      expect(blocked).toBe(false)
+      const result = await rateLimiter.checkLimit(identifier)
+      expect(result.allowed).toBe(false)
     })
 
     it('should allow requests after time window resets', async () => {
@@ -275,8 +275,8 @@ describe('RateLimiter', () => {
       await testHelpers.wait(1100)
 
       // Should be allowed again
-      const allowed = await rateLimiter.checkLimit(identifier)
-      expect(allowed).toBe(true)
+      const result = await rateLimiter.checkLimit(identifier)
+      expect(result.allowed).toBe(true)
     })
 
     it('should handle different identifiers independently', async () => {
@@ -289,10 +289,10 @@ describe('RateLimiter', () => {
       }
 
       // User1 should be blocked
-      expect(await rateLimiter.checkLimit(user1)).toBe(false)
+      expect((await rateLimiter.checkLimit(user1)).allowed).toBe(false)
 
       // User2 should still be allowed
-      expect(await rateLimiter.checkLimit(user2)).toBe(true)
+      expect((await rateLimiter.checkLimit(user2)).allowed).toBe(true)
     })
 
     it('should track remaining requests correctly', async () => {
@@ -340,16 +340,16 @@ describe('RateLimiter', () => {
       const customLimiter = new RateLimiter(2, 500) // 2 requests per 500ms
       const identifier = 'user123'
 
-      expect(await customLimiter.checkLimit(identifier)).toBe(true)
-      expect(await customLimiter.checkLimit(identifier)).toBe(true)
-      expect(await customLimiter.checkLimit(identifier)).toBe(false)
+      expect((await customLimiter.checkLimit(identifier)).allowed).toBe(true)
+      expect((await customLimiter.checkLimit(identifier)).allowed).toBe(true)
+      expect((await customLimiter.checkLimit(identifier)).allowed).toBe(false)
     })
 
     it('should handle zero limit gracefully', async () => {
       const zeroLimiter = new RateLimiter(0, 1000)
       const identifier = 'user123'
 
-      expect(await zeroLimiter.checkLimit(identifier)).toBe(false)
+      expect((await zeroLimiter.checkLimit(identifier)).allowed).toBe(false)
     })
   })
 })
