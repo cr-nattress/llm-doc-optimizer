@@ -22,7 +22,11 @@
             <h3>⚙️ Configuration</h3>
             <div class="form-group">
                 <label for="apiUrl">API Base URL:</label>
-                <input type="text" id="apiUrl" value="http://localhost:8888" placeholder="https://your-api.netlify.app">
+                <input type="text" id="apiUrl" value="https://document-optimizer.netlify.app" placeholder="https://document-optimizer.netlify.app">
+                <div class="url-presets">
+                    <button type="button" class="preset-btn" onclick="setApiUrl('https://document-optimizer.netlify.app')">🌐 Production</button>
+                    <button type="button" class="preset-btn" onclick="setApiUrl('http://localhost:8888')">🖥️ Local Dev</button>
+                </div>
             </div>
             <div class="form-group">
                 <label for="apiKey">API Key:</label>

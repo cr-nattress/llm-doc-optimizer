@@ -45,8 +45,8 @@ A comprehensive web-based testing interface for the LLM Document Optimizer API.
 
 ### API Settings
 - **API Base URL**: The base URL of your deployed API
-  - Local development: `http://localhost:8888`
-  - Netlify deployment: `https://your-site.netlify.app`
+  - **Production**: `https://document-optimizer.netlify.app`
+  - **Local development**: `http://localhost:8888`
 - **API Key**: Your authentication key for protected endpoints
 
 ### Supported File Types

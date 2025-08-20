@@ -69,7 +69,7 @@ class APITester {
     }
 
     loadSettings() {
-        this.apiUrl = localStorage.getItem('apiUrl') || 'http://localhost:8888';
+        this.apiUrl = localStorage.getItem('apiUrl') || 'https://document-optimizer.netlify.app';
         this.apiKey = localStorage.getItem('apiKey') || '';
         
         document.getElementById('apiUrl').value = this.apiUrl;
@@ -428,6 +428,12 @@ window.copyToClipboard = function(text) {
     }).catch(() => {
         alert('Failed to copy to clipboard');
     });
+};
+
+window.setApiUrl = function(url) {
+    document.getElementById('apiUrl').value = url;
+    // Trigger change event to save the setting
+    document.getElementById('apiUrl').dispatchEvent(new Event('change'));
 };
 
 window.downloadResult = function(elementId, filename = 'api-result.json') {
