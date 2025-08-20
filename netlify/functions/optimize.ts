@@ -142,7 +142,7 @@ app.get('/', async () => ({
   ]
 }))
 
-app.get('/models', { preHandler: [validateAPIKey] }, async () => {
+app.get('/models', async () => {
   const openaiService = (documentService as any).openaiService
   
   return {
@@ -160,9 +160,8 @@ app.get('/models', { preHandler: [validateAPIKey] }, async () => {
   }
 })
 
-app.get('/rate-limit/status', { preHandler: [validateAPIKey] }, async (request) => {
-  const apiKey = request.headers['x-api-key']
-  const identifier = typeof apiKey === 'string' ? apiKey : request.ip
+app.get('/rate-limit/status', async (request) => {
+  const identifier = request.ip
   
   return {
     requests: {
@@ -180,16 +179,14 @@ app.get('/rate-limit/status', { preHandler: [validateAPIKey] }, async (request) 
   }
 })
 
-app.get('/tokens/usage', { preHandler: [validateAPIKey] }, async (request) => {
-  const apiKey = request.headers['x-api-key']
-  const userId = typeof apiKey === 'string' ? apiKey : request.ip
+app.get('/tokens/usage', async (request) => {
+  const userId = request.ip
   
   return tokenManager.getUsageStats(userId)
 })
 
-app.get('/tokens/budget', { preHandler: [validateAPIKey] }, async (request) => {
-  const apiKey = request.headers['x-api-key']
-  const userId = typeof apiKey === 'string' ? apiKey : request.ip
+app.get('/tokens/budget', async (request) => {
+  const userId = request.ip
   
   const query = request.query as { dailyLimit?: string; monthlyLimit?: string } | null
   const dailyLimit = parseInt(query?.dailyLimit || '10000', 10)
@@ -206,7 +203,7 @@ app.get('/tokens/pricing', async () => {
   }
 })
 
-app.get('/tokens/estimate', { preHandler: [validateAPIKey] }, async (request) => {
+app.get('/tokens/estimate', async (request) => {
   const query = request.query as { model?: string; tokens?: string } | null
   const model = query?.model || 'gpt-3.5-turbo'
   const tokens = parseInt(query?.tokens || '1000', 10)
@@ -226,9 +223,8 @@ app.get('/tokens/estimate', { preHandler: [validateAPIKey] }, async (request) =>
   }
 })
 
-app.get('/tokens/transactions', { preHandler: [validateAPIKey] }, async (request) => {
-  const apiKey = request.headers['x-api-key']
-  const userId = typeof apiKey === 'string' ? apiKey : request.ip
+app.get('/tokens/transactions', async (request) => {
+  const userId = request.ip
   const query = request.query as { limit?: string } | null
   const limit = parseInt(query?.limit || '50', 10)
   
@@ -238,11 +234,10 @@ app.get('/tokens/transactions', { preHandler: [validateAPIKey] }, async (request
   }
 })
 
-app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) => {
+app.post('/optimize', async (request, reply) => {
   try {
     if (process.env.ENABLE_RATE_LIMITING !== 'false') {
-      const apiKey = request.headers['x-api-key']
-      const identifier = typeof apiKey === 'string' ? apiKey : request.ip
+      const identifier = request.ip
       const rateLimitInfo = await rateLimiter.checkLimit(identifier)
       
       // Add rate limit headers to response
@@ -314,8 +309,7 @@ app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) =
         })
       }
 
-      const apiKey = request.headers['x-api-key']
-      const userId = typeof apiKey === 'string' ? apiKey : request.ip
+      const userId = request.ip
 
       const results =
         optimizationType === 'consolidate'
@@ -355,8 +349,7 @@ app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) =
         })
       }
 
-      const apiKey = request.headers['x-api-key']
-      const userId = typeof apiKey === 'string' ? apiKey : request.ip
+      const userId = request.ip
 
       const results =
         body.optimizationType === 'consolidate'
@@ -392,18 +385,18 @@ app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) =
 })
 
 // Production environment endpoints
-app.get('/backup/status', { preHandler: [validateAPIKey] }, async () => {
+app.get('/backup/status', async () => {
   return backupManager.getBackupStatus()
 })
 
-app.get('/backup/history', { preHandler: [validateAPIKey] }, async () => {
+app.get('/backup/history', async () => {
   return {
     backups: backupManager.getBackupHistory(),
     enabled: env.BACKUP_ENABLED
   }
 })
 
-app.post('/backup/create', { preHandler: [validateAPIKey] }, async (request) => {
+app.post('/backup/create', async (request) => {
   const query = request.query as { type?: 'full' | 'incremental' | 'differential' } | null
   const type = query?.type || 'incremental'
   
@@ -421,14 +414,14 @@ app.post('/backup/create', { preHandler: [validateAPIKey] }, async (request) => 
   }
 })
 
-app.get('/disaster-recovery/plans', { preHandler: [validateAPIKey] }, async () => {
+app.get('/disaster-recovery/plans', async () => {
   return {
     plans: disasterRecoveryManager.getRecoveryPlans(),
     lastUpdated: new Date().toISOString()
   }
 })
 
-app.post('/disaster-recovery/execute', { preHandler: [validateAPIKey] }, async (request) => {
+app.post('/disaster-recovery/execute', async (request) => {
   const body = request.body as { component: string } | null
   
   if (!body?.component) {
@@ -449,14 +442,14 @@ app.post('/disaster-recovery/execute', { preHandler: [validateAPIKey] }, async (
   }
 })
 
-app.get('/cache/stats', { preHandler: [validateAPIKey] }, async () => {
+app.get('/cache/stats', async () => {
   return {
     metrics: cache.getMetrics(),
     enabled: true
   }
 })
 
-app.delete('/cache/clear', { preHandler: [validateAPIKey] }, async () => {
+app.delete('/cache/clear', async () => {
   await cache.clear()
   return { success: true, message: 'Cache cleared successfully' }
 })

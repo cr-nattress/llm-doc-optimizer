@@ -122,9 +122,10 @@ class APITester {
             ...options.headers
         };
 
-        if (this.apiKey && endpoint !== '/health' && endpoint !== '/') {
-            headers['X-API-Key'] = this.apiKey;
-        }
+        // No API key needed for this API
+        // if (this.apiKey && endpoint !== '/health' && endpoint !== '/') {
+        //     headers['X-API-Key'] = this.apiKey;
+        // }
 
         try {
             const response = await fetch(url, {
@@ -253,7 +254,7 @@ class APITester {
                 result = await this.makeRequest('/optimize', {
                     method: 'POST',
                     body: formData,
-                    headers: this.apiKey ? { 'X-API-Key': this.apiKey } : {}
+                    headers: {} // No API key needed
                 });
             } else {
                 // Text input
