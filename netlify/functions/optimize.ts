@@ -17,6 +17,11 @@ import { OptimizationRequestSchema, validateRequest } from '../../src/utils/vali
 import { errorStrategyManager, withGracefulDegradation } from '../../src/utils/error-strategies.js'
 import { errorReporter } from '../../src/utils/error-reporter.js'
 import { healthChecker } from '../../src/utils/resilience.js'
+import { registerSecurityMiddleware, getCORSOptions } from '../../src/middleware/security.js'
+import { env, getEnvironmentHealth } from '../../src/config/environment.js'
+import { databaseManager, initializeDatabaseWithRetry } from '../../src/config/database.js'
+import { cache, cdnManager } from '../../src/utils/cache.js'
+import { backupManager, disasterRecoveryManager } from '../../src/utils/backup.js'
 import type { DocumentInput, OptimizationRequest } from '../../src/types/index.js'
 
 const app = Fastify({
@@ -384,6 +389,76 @@ app.post('/optimize', { preHandler: [validateAPIKey] }, async (request, reply) =
       timestamp: new Date().toISOString()
     })
   }
+})
+
+// Production environment endpoints
+app.get('/backup/status', { preHandler: [validateAPIKey] }, async () => {
+  return backupManager.getBackupStatus()
+})
+
+app.get('/backup/history', { preHandler: [validateAPIKey] }, async () => {
+  return {
+    backups: backupManager.getBackupHistory(),
+    enabled: env.BACKUP_ENABLED
+  }
+})
+
+app.post('/backup/create', { preHandler: [validateAPIKey] }, async (request) => {
+  const query = request.query as { type?: 'full' | 'incremental' | 'differential' } | null
+  const type = query?.type || 'incremental'
+  
+  try {
+    const backup = await backupManager.performBackup(type)
+    return {
+      success: true,
+      backup
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Backup failed'
+    }
+  }
+})
+
+app.get('/disaster-recovery/plans', { preHandler: [validateAPIKey] }, async () => {
+  return {
+    plans: disasterRecoveryManager.getRecoveryPlans(),
+    lastUpdated: new Date().toISOString()
+  }
+})
+
+app.post('/disaster-recovery/execute', { preHandler: [validateAPIKey] }, async (request) => {
+  const body = request.body as { component: string } | null
+  
+  if (!body?.component) {
+    return { success: false, error: 'Component name required' }
+  }
+  
+  try {
+    await disasterRecoveryManager.executeRecoveryPlan(body.component)
+    return {
+      success: true,
+      message: `Recovery plan executed for ${body.component}`
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Recovery failed'
+    }
+  }
+})
+
+app.get('/cache/stats', { preHandler: [validateAPIKey] }, async () => {
+  return {
+    metrics: cache.getMetrics(),
+    enabled: true
+  }
+})
+
+app.delete('/cache/clear', { preHandler: [validateAPIKey] }, async () => {
+  await cache.clear()
+  return { success: true, message: 'Cache cleared successfully' }
 })
 
 export const handler: Handler = async (event, context) => {
