@@ -49,9 +49,13 @@ app.register(multipart, {
   }
 })
 
-app.register(cors, {
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
-  credentials: true
+app.register(cors, getCORSOptions())
+
+// Additional CORS headers for testing
+app.addHook('onSend', async (request, reply) => {
+  reply.header('Access-Control-Allow-Origin', '*')
+  reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
 })
 
 if (process.env.JWT_SECRET) {

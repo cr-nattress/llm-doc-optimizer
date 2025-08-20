@@ -201,12 +201,9 @@ export async function registerSecurityMiddleware(fastify: FastifyInstance): Prom
 
 // CORS configuration
 export function getCORSOptions() {
-  const allowedOrigins = env.ALLOWED_ORIGINS === '*' 
-    ? true 
-    : env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-
   return {
-    origin: allowedOrigins,
+    // Allow all origins for testing and single-user deployment
+    origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
@@ -217,7 +214,7 @@ export function getCORSOptions() {
       'Cache-Control',
       'X-File-Name'
     ],
-    credentials: true,
+    credentials: false,
     maxAge: 86400, // 24 hours
     preflightContinue: false,
     optionsSuccessStatus: 204
