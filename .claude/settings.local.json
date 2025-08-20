@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(npx husky init:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint)",
+      "Bash(rm:*)",
+      "Bash(npx netlify dev:*)",
+      "Bash(timeout 5 sleep 5)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run test:run:*)",
+      "Bash(npm run test:unit:*)",
+      "Bash(npm run test:coverage:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run:*)",
+      "Bash(set VITEST_ENV=e2e)",
+      "Bash(npx vitest run:*)",
+      "Bash(timeout 10 sleep 5)",
+      "Bash(timeout 10 sleep 8)",
+      "Bash(cmd /c:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
